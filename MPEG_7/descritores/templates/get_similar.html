@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% load static %}
+
+{% block content %}
+
+<h1>Similar</h1>
+
+{% for image in images %}
+
+    {{ image.name }}
+
+{% endfor %}
+
+{% endblock %}
