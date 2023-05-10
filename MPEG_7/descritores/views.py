@@ -4,8 +4,10 @@ import os
 import json
 from .EHD import EHD_Descriptor
 from PIL import Image
-from .models import ImageModel
+from .models import ImageModel, ImageInserted
 import numpy as np
+from MPEG_7.settings import BASE_DIR, MEDIA_URL
+from django.core.files.storage import default_storage
 
 
 # Create your views here.
@@ -19,7 +21,12 @@ def get_similar(request):
 
     num = request.POST.get('num_images')
     descriptor = request.POST.get('descriptor')
-    image = request.FILES.get('image')
+    im = request.FILES.get('image')
+
+    filename = default_storage.save('images/inserted_' + im.name, im)
+
+    image_path = f"../{MEDIA_URL}{filename}"
+    print(image_path)
 
     images_return = []
 
@@ -28,7 +35,7 @@ def get_similar(request):
         
     elif descriptor == "Edge Histogram":
 
-        image = Image.open(image)
+        image = Image.open(im)
         ehd = EHD_Descriptor(1)
         image_description = ehd.Apply(image)
 
@@ -45,37 +52,36 @@ def get_similar(request):
         
         sorted_list = sorted(distances, key=lambda x: x[1])
         closest = sorted_list[:int(num)]
+        print(closest)
 
         for img_close in closest:
             images_return.append(ImageModel.objects.get(pk=img_close[0]))
-
-        print("Edge Histogram")
 
     else:
         print("Error")
         print(descriptor)
         return redirect("select-image")
+    
 
-    return render(request, 'get_similar.html', {"images": images_return})
+    return render(request, 'get_similar.html', {"images": images_return, "image_inserted": image_path, "descriptor": descriptor, "num_images": num})
 
 
 def insert_images(request):
 
-    images_dir = "../Image_Dataset/"
-
-    images = []
+    images_dir = str(BASE_DIR) + "/descritores/static/images/"
+    print(images_dir)
 
     for filename in os.listdir(images_dir):
         if os.path.isfile(os.path.join(images_dir, filename)):
 
-            print(filename)
+            img_path = images_dir + filename
 
-            img = Image.open(images_dir + filename)
+            img = Image.open(img_path)
             edh = EHD_Descriptor(0.1)
             ehd_img = edh.Apply(img)
             ehd_img = json.dumps(ehd_img.tolist())
 
-            image = ImageModel(name=filename, image=images_dir+filename, edge_histogram=ehd_img, color_layout="A")
+            image = ImageModel(name=filename, image="/static/images/" + filename, edge_histogram=ehd_img, color_layout="A")
             image.save()
 
     return render(request, 'images_inserted.html', {})

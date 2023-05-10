@@ -4,12 +4,107 @@
 
 {% block content %}
 
-<h1>Similar</h1>
+<style>
+    .text-center {
+        padding-top: 5vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    .row-cols-auto {
+        width: 100%;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-around;
+        width: auto;
+    }
+    .img-fluid {
+        width: 20vw;
+        height: 20vh;
+    }
+    .row.row-cols-auto > .col {
+        margin-bottom: 10px;
+    }
+    .content-bottom {
+        margin-top: 5vh;
+        display: flex;
+        flex-direction: column;
+    }
+    .card {
+        margin-top: 7vh;
+    }
+.text-top {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        width: 100%;
+        justify-content: space-between;
+    }
+    .btn-primary {
+        justify-self: flex-start;
+    }
+    .text-top {
+        display: flex;
+        flex-direction: row;
+        width: 100%;
+    }
+    .content-top {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+</style>
 
-{% for image in images %}
+<script>
+    
+</script>
 
-    {{ image.name }}
+<div class="container text-center">
 
-{% endfor %}
+    <div class="content-top">
+
+        <div class="text-top">
+            
+            <a href="{% url 'select-image' %}" class="btn btn-primary">Go back</a>
+            <h1 class="title">Selected image</h1>
+            <a href="{% url 'select-image' %}" class="btn btn-primary" style="visibility: hidden;">Go back</a>
+
+        </div>
+
+        <div class="card" style="width: 25rem;">
+            <img src="{{ image_inserted }}" class="card-img-top" alt="inserted-image">
+            <div class="card-body">
+            <p class="card-text">Descriptor: {{ descriptor }}</p>
+            <p class="card-text">Number of images: {{ num_images }}</p>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="content-bottom">
+
+        <h1>Similar images</h1>
+
+        <div class="row row-cols-auto">
+
+            {% for image_db in images %}
+
+                <div class="col">
+                    <div class="card">
+                        
+                        <img src="{{ image_db.image }}" class="img-fluid custom-size" alt="Image">
+                        <div class="card-body">
+                        <p class="card-text">{{ image_db.name }}</p>
+                        </div>
+
+                    </div>
+                </div>
+
+            {% endfor %}
+
+        </div>
+    </div>
+</div>
 
 {% endblock %}

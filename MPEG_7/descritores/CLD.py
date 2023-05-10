@@ -260,7 +260,7 @@ class CLD_Descriptor:
 
 
 
-    def getRightCoeffNumber(num):
+    def getRightCoeffNumber(self, num):
 
         val = 0
         if (num <= 1):
@@ -461,7 +461,7 @@ class CLD_Descriptor:
             
         return j << 3;
 
-    def IquantYac(i):
+    def IquantYac(self, i):
 
         i = i << 3;
         i -= 128;
