@@ -1,6 +1,7 @@
 import numpy as np 
 from PIL import Image
 import math
+import ctypes
 
 
 class CLD_Descriptor:
@@ -59,14 +60,13 @@ class CLD_Descriptor:
         self.YCoeff = np.zeros(64)
         self.CbCoeff = np.zeros(64)
         self.CrCoeff = np.zeros(64)
-        self.colorLayoutImage = np.null
-        self.extract()
 
-    def Apply(self, srcImg):
+    def apply(self, srcImg):
 
-        self.srcImg = Image.load(srcImg)
+        self.srcImg = srcImg
         self._xSize, self._ySize = self.srcImg.size
-        self.init()
+        
+        self.extract()
 
 
     def extract(self):
@@ -95,17 +95,18 @@ class CLD_Descriptor:
             self.shape[2, i] = Temp3[i]
         
 
-
-        self.YCoeff[0] = self.quant_ydc(self.shape[0, 0] >> 3) >> 1
-        self.CbCoeff[0] = self.quant_cdc(self.shape[1, 0] >> 3)
-        self.CrCoeff[0] = self.quant_cdc(self.shape[2, 0] >> 3)
+        
+        #self.YCoeff[0] = self.quant_ydc(self.shape[0, 0] >> 3) >> 1
+        self.YCoeff[0] = self.quant_ydc(self.shape[0, 0] // 8) // 2
+        self.CbCoeff[0] = self.quant_cdc(self.shape[1, 0] // 8)
+        self.CrCoeff[0] = self.quant_cdc(self.shape[2, 0] // 8)
 
         #quantization and zig-zagging
         for i in range(64):
-        
-            self.YCoeff[i] = self.quant_ac((self.shape[0, (self.arrayZigZag[i])]) >> 1) >> 3
-            self.CbCoeff[i] = self.quant_ac(self.shape[1, (self.arrayZigZag[i])]) >> 3
-            self.CrCoeff[i] = self.quant_ac(self.shape[2, (self.arrayZigZag[i])]) >> 3
+            
+            self.YCoeff[i] = self.quant_ac((self.shape[0, (self.arrayZigZag[i])]) // 2) // 8
+            self.CbCoeff[i] = self.quant_ac(self.shape[1, (self.arrayZigZag[i])]) // 8
+            self.CrCoeff[i] = self.quant_ac(self.shape[2, (self.arrayZigZag[i])]) // 8
         
 
 
@@ -125,18 +126,18 @@ class CLD_Descriptor:
             self.shape[0, i] = 0
             self.shape[1, i] = 0
             self.shape[2, i] = 0
-        
 
-        if self.srcImg.PixelFormat == PixelFormat.Format8bppIndexed:
-            fmt = PixelFormat.Format8bppIndexed
+        if self.srcImg.mode == "L":
+            fmt = "L"
         else:
-            fmt = PixelFormat.Format24bppRgb
+            fmt = "RGB"
 
-        srcData = srcImg.LockBits(Rectangle(0, 0, _xSize, _ySize), ImageLockMode.ReadOnly, fmt)
+        srcData = np.array(self.srcImg.convert(fmt))
+        srcData = np.array(srcData)
 
-        offset = srcData.Stride - srcData.Width * 3
+        #offset = self.srcImg.size[0] * 3 - self.srcImg.width * 3
 
-
+        src = srcData.ctypes.data_as(ctypes.POINTER(ctypes.c_ubyte))
 
         for yi in range(self._ySize):
                 for xi in range(self._xSize):
@@ -145,69 +146,67 @@ class CLD_Descriptor:
                     G = src[1]
                     B = src[0]
 
-                    y_axis = (int)(yi / (self._ySize / 8.0))
-                    x_axis = (int)(xi / (self._xSize / 8.0))
+                    y_axis = int(yi / (self._ySize / 8.0))
+                    x_axis = int(xi / (self._xSize / 8.0))
 
                     k = (y_axis << 3) + x_axis
 
                     #RGB to YCbCr, partition and average-calculation
                     yy = (0.299 * R + 0.587 * G + 0.114 * B) / 256.0
-                    sum[0, k] += (int)(219.0 * yy + 16.5); # Y
-                    sum[1, k] += (int)(224.0 * 0.564 * (B / 256.0 * 1.0 - yy) + 128.5); # Cb
-                    sum[2, k] += (int)(224.0 * 0.713 * (R / 256.0 * 1.0 - yy) + 128.5); # Cr
+                    sum[0, k] += int(219.0 * yy + 16.5) # Y
+                    sum[1, k] += int(224.0 * 0.564 * (B / 256.0 * 1.0 - yy) + 128.5) # Cb
+                    sum[2, k] += int(224.0 * 0.713 * (R / 256.0 * 1.0 - yy) + 128.5) # Cr
                     cnt[k] += 1
 
-                src += offset
-
-
-
-        self.srcImg.UnlockBits(srcData)
+                #src += offset
 
 
         for i in range(8):
             for j in range(8):
                 for k in range(3):
                     if (cnt[(i << 3) + j] != 0):
-                        self.shape[k, (i << 3) + j] = (int)(sum[k, (i << 3) + j] / cnt[(i << 3) + j])
+                        self.shape[k, (i << 3) + j] = int(sum[k, (i << 3) + j] / cnt[(i << 3) + j])
                     else:
                         self.shape[k, (i << 3) + j] = 0
 
 
     def Fdct(self, shapes):
 
-        dct = np.array(64)
+        dct = np.zeros(64)
 
         #calculation of the cos-values of the second sum
         for i in range(8):
-        
             for j in range(8):
             
                 s = 0.0
+
                 for k in range(8):
                     s += self.arrayCosin[j, k] * shapes[8 * i + k]
-                dct[8 * i + j] = s
+
+                index = 8 * i + j
+                dct[index] = s
 
         for j in range(8):
             for i in range(8):
 
                 s = 0.0
                 for k in range(8):
-                    s += self.arrayCosin[i, k] * dct[8 * k + j];
-                shapes[8 * i + j] = int(math.Floor(s + 0.499999))
+                    s += self.arrayCosin[i, k] * dct[8 * k + j]
+                shapes[8 * i + j] = int(math.floor(s + 0.499999))
 
 
     def quant_ydc(self, i):
 
         if (i > 192):
-            j = 112 + ((i - 192) >> 2)
+            j = 112 + ((i - 192) // 4)
         elif (i > 160):
-            j = 96 + ((i - 160) >> 1)
+            j = 96 + ((i - 160) // 2)
         elif (i > 96):
             j = 32 + (i - 96)
         elif (i > 64):
-            j = 16 + ((i - 64) >> 1)
+            j = 16 + ((i - 64) // 2)
         else:
-            j = i >> 2
+            j = i // 4
 
         return j
 
@@ -217,22 +216,22 @@ class CLD_Descriptor:
         if (i > 191):
             j = 63
         elif (i > 160):
-            j = 56 + ((i - 160) >> 2)
+            j = 56 + ((i - 160) // 4)
         elif (i > 144):
-            j = 48 + ((i - 144) >> 1)
+            j = 48 + ((i - 144) // 2)
         elif (i > 112):
             j = 16 + (i - 112)
         elif (i > 96):
-            j = 8 + ((i - 96) >> 1)
+            j = 8 + ((i - 96) // 2)
         elif (i > 64):
-            j = (i - 64) >> 2
+            j = (i - 64) // 4
         else:
             j = 0
 
         return j
     
 
-    def quant_ac(i):
+    def quant_ac(self, i):
 
         if (i > 255):
             i = 255
@@ -241,10 +240,10 @@ class CLD_Descriptor:
             i = -256
 
         if ((abs(i)) > 127):
-            j = 64 + ((abs(i)) >> 2)
+            j = 64 + ((abs(i)) // 4)
 
         elif ((abs(i)) > 63):
-            j = 32 + ((abs(i)) >> 1)
+            j = 32 + ((abs(i)) // 2)
 
         else:
             j = abs(i)
@@ -283,128 +282,95 @@ class CLD_Descriptor:
         return val
 
 
+    def YCrCb2RGB(self, rgbSmallImage):
+    
+        br = Image.new("RGB", (240, 240))
+
+        srcData = br.load()
+
+        offset = srcData.Stride - srcData.Width * 3
+
+        src = srcData.ctypes.data_as(ctypes.POINTER(ctypes.c_ubyte))
+
+        for y in range(1, 241):
+            i = 0
+            if y >= 30: 
+                i = 8
+            if y >= 60: 
+                i = 16
+            if y >= 90: 
+                i = 24
+            if y >= 120:
+                i = 32
+            if y >= 150: 
+                i = 40
+            if y >= 180:
+                i = 48
+            if y >= 210:
+                i = 56
+
+            for x in range(8):
+                for j in range(30):
+                
+                    rImage = ((rgbSmallImage[0, i] - 16.0) * 256.0) / 219.0
+                    gImage = ((rgbSmallImage[1, i] - 128.0) * 256.0) / 224.0
+                    bImage = ((rgbSmallImage[2, i] - 128.0) * 256.0) / 224.0
+
+                    src[2] = max(0, int(rImage + (1.402 * bImage) + 0.5))  # R
+                    src[1] = max(0, int(rImage + (-0.34413 * gImage) + (-0.71414 * bImage) + 0.5))  # G
+                    src[0] = max(0, int(rImage + (1.772 * gImage) + 0.5))  # B
+                    src += 3
+                
+                i += 1
+
+            src += offset
+
+        return br
+    
+
+    def getColorLayoutImage(self):
+
+        if self.colorLayoutImage != None:
+            return self.colorLayoutImage
+        else:
+            smallReImage = np.array((3,64))
+
+            smallReImage[0, 0] = self.IquantYdc((self.YCoeff[0]))
+            smallReImage[1, 0] = self.IquantCdc((self.CbCoeff[0]))
+            smallReImage[2, 0] = self.IquantCdc((self.CrCoeff[0]))
+
+            for i in range(64):
+                smallReImage[0, (self.arrayZigZag[i])] = self.IquantYac((self.YCoeff[i]))
+                smallReImage[1, (self.arrayZigZag[i])] = self.IquantCac((self.CbCoeff[i]))
+                smallReImage[2, (self.arrayZigZag[i])] = self.IquantCac((self.CrCoeff[i]))
+
+            Temp1 = np.array(64)
+            Temp2 = np.array(64)
+            Temp3 = np.array(64)
+
+            for i in range(64):
+            
+                Temp1[i] = smallReImage[0, i]
+                Temp2[i] = smallReImage[1, i]
+                Temp3[i] = smallReImage[2, i]
+
+            self.Idct(Temp1)
+            self.Idct(Temp2)
+            self.Idct(Temp3)
+
+            for i in range(64):
+                smallReImage[0, i] = Temp1[i]
+                smallReImage[1, i] = Temp2[i]
+                smallReImage[2, i] = Temp3[i]
 
 
+            self.colorLayoutImage = self.YCrCb2RGB(smallReImage)
+            return self.colorLayoutImage
 
-
-    private static Bitmap YCrCb2RGB(int[,] rgbSmallImage)
-    {
-        Bitmap br = new Bitmap(240, 240, PixelFormat.Format24bppRgb);
-
-        double rImage, gImage, bImage;
-
-        ///
-        BitmapData srcData = br.LockBits(new Rectangle(0, 0, 240, 240),
-        ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-
-        int offset = srcData.Stride - srcData.Width * 3;
-
-
-        unsafe
-        {
-            byte* src = (byte*)srcData.Scan0.ToPointer();
-
-            int i = 0;
-            for (int y = 1; y <= 240; y++)
-            {
-                i = 0;
-                if (y >= 30) i = 8;
-                if (y >= 60) i = 16;
-                if (y >= 90) i = 24;
-                if (y >= 120) i = 32;
-                if (y >= 150) i = 40;
-                if (y >= 180) i = 48;
-                if (y >= 210) i = 56;
-
-                for (int x = 0; x < 8; x++)
-                {
-
-                    for (int j = 0; j < 30; j++)
-                    {
-                        rImage = ((rgbSmallImage[0, i] - 16.0) * 256.0) / 219.0;
-                        gImage = ((rgbSmallImage[1, i] - 128.0) * 256.0) / 224.0;
-                        bImage = ((rgbSmallImage[2, i] - 128.0) * 256.0) / 224.0;
-
-                        src[2] = (byte)Math.Max(0, (int)((rImage) + (1.402 * bImage) + 0.5)); //R
-                        src[1] = (byte)Math.Max(0, (int)((rImage) + (-0.34413 * gImage) + (-0.71414 * bImage) + 0.5));  //G
-                        src[0] = (byte)Math.Max(0, (int)((rImage) + (1.772 * gImage) + 0.5)); //B
-                        src += 3;
-                    }
-                    i++;
-
-                }
-
-                src += offset;
-
-
-            }
-
-        }
-
-        br.UnlockBits(srcData);
-
-        ////
-
-
-        return br;
-    }
-
-    public Bitmap getColorLayoutImage()
-    {
-        if (colorLayoutImage != null)
-            return colorLayoutImage;
-        else
-        {
-            int[,] smallReImage = new int[3, 64];
-
-            // inverse quantization and zig-zagging
-            smallReImage[0, 0] = IquantYdc((YCoeff[0]));
-            smallReImage[1, 0] = IquantCdc((CbCoeff[0]));
-            smallReImage[2, 0] = IquantCdc((CrCoeff[0]));
-
-            for (int i = 1; i < 64; i++)
-            {
-                smallReImage[0, (arrayZigZag[i])] = IquantYac((YCoeff[i]));
-                smallReImage[1, (arrayZigZag[i])] = IquantCac((CbCoeff[i]));
-                smallReImage[2, (arrayZigZag[i])] = IquantCac((CrCoeff[i]));
-            }
-
-            // inverse Discrete Cosine Transform
-
-            int[] Temp1 = new int[64];
-            int[] Temp2 = new int[64];
-            int[] Temp3 = new int[64];
-
-            for (int i = 0; i < 64; i++)
-            {
-                Temp1[i] = smallReImage[0, i];
-                Temp2[i] = smallReImage[1, i];
-                Temp3[i] = smallReImage[2, i];
-
-            }
-
-            Idct(Temp1);
-            Idct(Temp2);
-            Idct(Temp3);
-
-            for (int i = 0; i < 64; i++)
-            {
-                smallReImage[0, i] = Temp1[i];
-                smallReImage[1, i] = Temp2[i];
-                smallReImage[2, i] = Temp3[i];
-            }
-
-
-            // YCrCb to RGB
-            colorLayoutImage = YCrCb2RGB(smallReImage);
-            return colorLayoutImage;
-        }
-    }
 
     def Idct(self, iShapes):
 
-
-        dct = np.array(64);
+        dct = np.array(64)
 
         #calculation of the cos-values of the second sum
         for u in range(8):
@@ -412,15 +378,15 @@ class CLD_Descriptor:
 
                 s = 0.0
                 for k in range(8):
-                    s += self.arrayCosin[k, v] * iShapes[8 * u + k];
-                dct[8 * u + v] = s;
+                    s += self.arrayCosin[k, v] * iShapes[8 * u + k]
+                dct[8 * u + v] = s
 
         for v in range(8):
             for u in range(8):
 
-                s = 0.0;
+                s = 0.0
                 for k in range(8):
-                    s += self.arrayCosin[k, u] * dct[8 * k + v];
+                    s += self.arrayCosin[k, u] * dct[8 * k + v]
                 iShapes[8 * u + v] = int(math.floor(s + 0.499999))
 
 
@@ -429,73 +395,73 @@ class CLD_Descriptor:
 
         i = i << 1
         if (i > 112):
-            j = 194 + ((i - 112) << 2);
+            j = 194 + ((i - 112) // 4)
         elif (i > 96):
-            j = 162 + ((i - 96) << 1);
+            j = 162 + ((i - 96) // 2)
         elif (i > 32):
-            j = 96 + (i - 32);
+            j = 96 + (i - 32)
         elif (i > 16):
-            j = 66 + ((i - 16) << 1);
+            j = 66 + ((i - 16) // 2)
 
         else:
-            j = i << 2;
+            j = i // 4
 
-        return j << 3;
+        return j // 8
 
     def IquantCdc(self, i):
 
         if (i > 63):
             j = 192
         elif (i > 56):
-            j = 162 + ((i - 56) << 2)
+            j = 162 + ((i - 56) // 4)
         elif (i > 48):
-            j = 145 + ((i - 48) << 1)
+            j = 145 + ((i - 48) // 2)
         elif (i > 16):
             j = 112 + (i - 16)
         elif (i > 8):
-            j = 97 + ((i - 8) << 1)
+            j = 97 + ((i - 8) // 2)
         elif (i > 0):
-            j = 66 + (i << 2)
+            j = 66 + (i // 4)
         else:
             j = 64
             
-        return j << 3;
+        return j // 8
 
     def IquantYac(self, i):
 
-        i = i << 3;
-        i -= 128;
+        i = i // 8
+        i -= 128
         if (i > 128):
             i = 128
         if (i < -128):
             i = -128
-        if ((math.Abs(i)) > 96):
-            j = ((math.Abs(i)) << 2) - 256
-        elif ((math.Abs(i)) > 64):
-            j = ((math.Abs(i)) << 1) - 64
+        if ((abs(i)) > 96):
+            j = ((abs(i)) << 2) - 256
+        elif ((abs(i)) > 64):
+            j = ((abs(i)) << 1) - 64
         else:
-            j = math.Abs(i)
+            j = abs(i)
 
         if i < 0:
             j = -j
         else:
             j = j
 
-        return j << 1;
+        return j // 2
 
     def IquantCac(self, i):
-        i = i << 3;
-        i -= 128;
+        i = i // 8
+        i -= 128
         if (i > 128):
             i = 128
         if (i < -128):
-            i = -128;
-        if ((math.Abs(i)) > 96):
-            j = ((math.Abs(i) << 2) - 256)
-        elif ((math.Abs(i)) > 64):
-            j = ((math.Abs(i) << 1) - 64)
+            i = -128
+        if ((abs(i)) > 96):
+            j = ((abs(i) // 4) - 256)
+        elif ((abs(i)) > 64):
+            j = ((abs(i) // 2) - 64)
         else:
-            j = math.Abs(i)
+            j = abs(i)
 
         if i < 0:
             j = -j

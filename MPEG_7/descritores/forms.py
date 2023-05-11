@@ -26,11 +26,14 @@ class CustomSelect(forms.Select):
 class InsertImage(forms.Form):
     choices = [("Color Layout", "Color Layout"), ("Edge Histogram", "Edge Histogram")]
 
-    num_images = forms.IntegerField(min_value=1,
+    num_images = forms.IntegerField(label="Number of Images",
+                                    min_value=1,
                                     max_value=665,
                                     widget=CustomNumberInput())
     
     descriptor = forms.ChoiceField(choices=choices,
+                                   label="MPEG7 Descriptor",
                                    widget=CustomSelect())
     
-    image = forms.ImageField(widget=CustomFileInput())
+    image = forms.ImageField(label="Image",
+                             widget=CustomFileInput())
