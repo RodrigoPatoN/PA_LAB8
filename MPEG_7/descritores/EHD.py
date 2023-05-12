@@ -63,7 +63,6 @@ class EHD_Descriptor:
         else:
             fmt = 'RGB'
 
-
         src_data = np.array(src_img.getdata(), dtype=np.uint8).reshape(self.height, self.width, len(fmt))
         self.grey_level = np.zeros((self.width, self.height))
 
@@ -114,9 +113,6 @@ class EHD_Descriptor:
         average_brightness *= div
 
         return average_brightness
-    
-
-
 
 
     def getSecondBlockAVG(self, i, j):
@@ -155,7 +151,6 @@ class EHD_Descriptor:
         average_brightness *= div
 
         return average_brightness
-
 
 
 
